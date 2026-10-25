@@ -30,6 +30,12 @@
 "Shortcut" = "快速鍵";
 "Change Shortcut…" = "更改快速鍵…";
 "Change Shortcut" = "更改快速鍵";
+"Restore Default (%@)" = "恢復預設值（%@）";
+"Take Screenshot" = "截圖";
+"Screenshot Shortcut" = "截圖快速鍵";
+"Screenshot %@" = "截圖 %@";
+"macOS already takes %@ for screenshots" = "macOS 已經用 %@ 來截圖";
+"Choose another shortcut, or turn that one off in System Settings > Keyboard > Keyboard Shortcuts > Screenshots." = "請換一組快速鍵，或到「系統設定 > 鍵盤 > 鍵盤快速鍵 > 截圖」把它關掉。";
 "None" = "無";
 "Space" = "空白鍵";
 "Press the new shortcut" = "請按下新的快速鍵";

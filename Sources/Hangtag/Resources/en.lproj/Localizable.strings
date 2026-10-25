@@ -32,6 +32,12 @@
 "Shortcut" = "Shortcut";
 "Change Shortcut…" = "Change Shortcut…";
 "Change Shortcut" = "Change Shortcut";
+"Restore Default (%@)" = "Restore Default (%@)";
+"Take Screenshot" = "Take Screenshot";
+"Screenshot Shortcut" = "Screenshot Shortcut";
+"Screenshot %@" = "Screenshot %@";
+"macOS already takes %@ for screenshots" = "macOS already takes %@ for screenshots";
+"Choose another shortcut, or turn that one off in System Settings > Keyboard > Keyboard Shortcuts > Screenshots." = "Choose another shortcut, or turn that one off in System Settings > Keyboard > Keyboard Shortcuts > Screenshots.";
 "None" = "None";
 "Space" = "Space";
 "Press the new shortcut" = "Press the new shortcut";

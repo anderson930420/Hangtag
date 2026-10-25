@@ -10,6 +10,7 @@ Take a screenshot and it drops onto the line. Rest the pointer in the menu bar t
 
 - **Screenshots hang instantly.** Hangtag can take over where macOS saves screenshots, so they skip the Desktop and the floating thumbnail. Your previous settings come back when you turn it off or quit.
 - **Bring the line down from the menu bar** on any display, with or without a menu bar, in a window or over full screen apps. A keyboard shortcut works too.
+- **Your own screenshot shortcut.** Pick any combination in the menu bar to select an area, or a window with Space, and the capture hangs right away. Shortcuts already taken by macOS are refused with a hint, and both shortcuts can go back to their defaults. The first capture asks for Screen Recording permission.
 - **Drag a photo anywhere.** An app gets a copy, a folder keeps the file, the Trash discards it.
 - **Copy new screenshots automatically**, ready to paste with ⌘V. Images copied in other apps are left on the clipboard as they are.
 - **Take everything down** with one button at the end of the line.
@@ -56,6 +57,7 @@ MIT. See [LICENSE](LICENSE).
 
 - **截圖立刻掛上**：可以接管 macOS 的截圖存放位置，不再堆在桌面，也不會出現浮動縮圖。關閉或結束時會還原你原本的設定。
 - **從選單列叫出繩子**：任何螢幕都適用，有沒有選單列、視窗或全螢幕都可以，也可以用快速鍵。
+- **自訂截圖快速鍵**：在選單列設定任意組合鍵來框選區域，或按空白鍵改擷取視窗，截完立刻掛上繩子。macOS 已佔用的組合會被擋下並提示，兩組快速鍵都能一鍵恢復預設值。第一次截圖時需要開放「螢幕錄製」權限。
 - **拖到哪裡都行**：拖進 App 是拷貝一份，拖進資料夾就保留檔案，拖到垃圾桶就丟掉。
 - **自動拷貝新截圖**：截完直接 ⌘V。從其他 App 拷貝的圖片不會被覆蓋。
 - **一鍵全部取下**：繩子右端的按鈕。

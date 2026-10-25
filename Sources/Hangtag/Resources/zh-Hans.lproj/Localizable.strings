@@ -30,6 +30,12 @@
 "Shortcut" = "快捷键";
 "Change Shortcut…" = "更改快捷键…";
 "Change Shortcut" = "更改快捷键";
+"Restore Default (%@)" = "恢复默认值（%@）";
+"Take Screenshot" = "截图";
+"Screenshot Shortcut" = "截图快捷键";
+"Screenshot %@" = "截图 %@";
+"macOS already takes %@ for screenshots" = "macOS 已经用 %@ 来截图";
+"Choose another shortcut, or turn that one off in System Settings > Keyboard > Keyboard Shortcuts > Screenshots." = "请换一组快捷键，或前往“系统设置 > 键盘 > 键盘快捷键 > 截屏”将其关闭。";
 "None" = "无";
 "Space" = "空格";
 "Press the new shortcut" = "请按下新的快捷键";

@@ -23,6 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var clipboardWatcher: ClipboardWatcher!
     private var signalSources: [DispatchSourceSignal] = []
     private var hotKey: HotKey?
+    private var screenshotHotKey: HotKey?
     private var cancellables = Set<AnyCancellable>()
     private var mouseTimer: Timer?
 
@@ -94,6 +95,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if ClipboardWatcher.isEnabled { clipboardWatcher.start() }
 
         registerShortcut()
+        registerScreenshotShortcut()
 
         setUpStatusItem()
         watchMenuBarClicks()
@@ -708,13 +710,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func registerShortcut() {
         hotKey = nil
         guard let shortcut = Shortcut.current else { return }
-        hotKey = HotKey(shortcut) { [weak self] in self?.toggle() }
+        hotKey = HotKey(shortcut, for: .line) { [weak self] in self?.toggle() }
+    }
+
+    private func registerScreenshotShortcut() {
+        screenshotHotKey = nil
+        guard let shortcut = Shortcut.screenshot else { return }
+        screenshotHotKey = HotKey(shortcut, for: .screenshot) { Capture.selection() }
     }
 
     private func changeShortcut() {
-        // Off while recording, so pressing the current one records it
-        // instead of showing the line.
+        // Both off while recording, so pressing a current one records it
+        // instead of showing the line or taking a screenshot.
         hotKey = nil
+        screenshotHotKey = nil
         ShortcutRecorder.shared.record { [weak self] result in
             guard let self else { return }
             if let result {
@@ -728,7 +737,56 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
             }
             self.registerShortcut()
+            self.registerScreenshotShortcut()
         }
+    }
+
+    private func changeScreenshotShortcut() {
+        hotKey = nil
+        screenshotHotKey = nil
+        ShortcutRecorder.shared.record { [weak self] result in
+            guard let self else { return }
+            defer {
+                self.registerShortcut()
+                self.registerScreenshotShortcut()
+            }
+            // Cancelled, or Delete for no shortcut.
+            guard let result else { return }
+            guard let shortcut = result else {
+                Shortcut.screenshot = nil
+                return
+            }
+            if shortcut.isMacOSScreenshotShortcut {
+                self.explainMacOSScreenshotShortcut(shortcut)
+                return
+            }
+            // The line's shortcut, or taken by another app: keep the one that worked.
+            let previous = Shortcut.screenshot
+            Shortcut.screenshot = shortcut
+            self.registerScreenshotShortcut()
+            if shortcut == Shortcut.current || self.screenshotHotKey == nil {
+                NSSound.beep()
+                Shortcut.screenshot = previous
+            }
+        }
+    }
+
+    /// After a shortcut went back to its default. If the screenshot shortcut
+    /// had taken ⌃⌥T meanwhile, the line is left without one, and says so.
+    private func reregisterShortcuts() {
+        hotKey = nil
+        screenshotHotKey = nil
+        registerScreenshotShortcut()
+        registerShortcut()
+        if Shortcut.current != nil && hotKey == nil { NSSound.beep() }
+    }
+
+    private func explainMacOSScreenshotShortcut(_ shortcut: Shortcut) {
+        let alert = NSAlert()
+        alert.messageText = String(format: L("macOS already takes %@ for screenshots"), shortcut.display)
+        alert.informativeText = L("Choose another shortcut, or turn that one off in System Settings > Keyboard > Keyboard Shortcuts > Screenshots.")
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
     }
 
     private func setKeep(_ n: Int?) {
@@ -794,6 +852,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             toggleItem.keyEquivalentModifierMask = shortcut.modifiers
         }
         menu.addItem(toggleItem)
+
+        // Starts once the menu has closed, so the menu is not in the picture.
+        let captureItem = ClosureMenuItem(L("Take Screenshot")) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { Capture.selection() }
+        }
+        if let shortcut = Shortcut.screenshot, shortcut.key.count == 1 {
+            captureItem.keyEquivalent = shortcut.key
+            captureItem.keyEquivalentModifierMask = shortcut.modifiers
+        }
+        menu.addItem(captureItem)
 
         let clearItem = ClosureMenuItem(L("Take everything down")) { [weak self] in
             self?.line.clear()
@@ -898,12 +966,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         let shortcutItem = NSMenuItem(title: L("Shortcut"), action: nil, keyEquivalent: "")
         let shortcuts = NSMenu()
+        shortcuts.autoenablesItems = false
         let current = NSMenuItem(title: Shortcut.current?.display ?? L("None"), action: nil, keyEquivalent: "")
         current.isEnabled = false
         shortcuts.addItem(current)
         shortcuts.addItem(ClosureMenuItem(L("Change Shortcut…")) { [weak self] in self?.changeShortcut() })
+        let resetLine = ClosureMenuItem(String(format: L("Restore Default (%@)"), Shortcut.standard.display)) { [weak self] in
+            Shortcut.resetLine()
+            self?.reregisterShortcuts()
+        }
+        resetLine.isEnabled = Shortcut.current != Shortcut.standard
+        shortcuts.addItem(resetLine)
         shortcutItem.submenu = shortcuts
         menu.addItem(shortcutItem)
+
+        let screenshotItem = NSMenuItem(title: L("Screenshot Shortcut"), action: nil, keyEquivalent: "")
+        let screenshotMenu = NSMenu()
+        screenshotMenu.autoenablesItems = false
+        let screenshotCurrent = NSMenuItem(title: Shortcut.screenshot?.display ?? L("None"), action: nil, keyEquivalent: "")
+        screenshotCurrent.isEnabled = false
+        screenshotMenu.addItem(screenshotCurrent)
+        screenshotMenu.addItem(ClosureMenuItem(L("Change Shortcut…")) { [weak self] in self?.changeScreenshotShortcut() })
+        let resetScreenshot = ClosureMenuItem(String(format: L("Restore Default (%@)"), L("None"))) { [weak self] in
+            Shortcut.resetScreenshot()
+            self?.reregisterShortcuts()
+        }
+        resetScreenshot.isEnabled = Shortcut.screenshot != nil
+        screenshotMenu.addItem(resetScreenshot)
+        screenshotItem.submenu = screenshotMenu
+        menu.addItem(screenshotItem)
 
         menu.addItem(ClosureMenuItem(L("Open screenshots folder")) { [weak self] in
             guard let self else { return }
