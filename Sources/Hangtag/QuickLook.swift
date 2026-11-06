@@ -2,17 +2,28 @@ import AppKit
 import Quartz
 
 /// A quick look at a photo without opening it: the same Quick Look window
-/// Finder shows. Force click a photo, or choose Quick Look from its menu.
-/// The arrow keys go through the rest of the line, and Space or Escape
-/// closes it.
+/// Finder shows. Space with the pointer over a photo, a force click, or
+/// Quick Look from its menu. The arrow keys go through the rest of the line,
+/// and Space or Escape closes it.
 ///
-/// The line never takes the keyboard from the app you are in, so Space over
-/// a photo cannot open it; the window takes the keyboard once it is open.
+/// The line never takes the keyboard from the app you are in, so Space is
+/// only caught while the pointer is over a photo; see AppDelegate.
 @MainActor
 final class QuickLook: NSObject, QLPreviewPanelDataSource, QLPreviewPanelDelegate {
     static let shared = QuickLook()
 
     private var urls: [URL] = []
+
+    /// Space over a photo, as in Finder: it opens the photo, closes Quick
+    /// Look when it already shows that photo, and switches to it otherwise.
+    func toggle(_ urls: [URL], at index: Int) {
+        if QLPreviewPanel.sharedPreviewPanelExists(), let panel = QLPreviewPanel.shared(), panel.isVisible,
+           self.urls == urls, panel.currentPreviewItemIndex == index {
+            panel.orderOut(nil)
+        } else {
+            show(urls, at: index)
+        }
+    }
 
     func show(_ urls: [URL], at index: Int) {
         guard !urls.isEmpty, let panel = QLPreviewPanel.shared() else { return }

@@ -4,9 +4,10 @@ import Carbon
 /// A global shortcut through the Carbon hot key API. Unlike a global key
 /// monitor, it needs no Accessibility permission.
 final class HotKey {
-    /// What each shortcut does: showing the line, taking a screenshot.
+    /// What each shortcut does: showing the line, taking a screenshot, and
+    /// Space over a photo.
     enum Purpose: UInt32 {
-        case line = 1, screenshot = 2
+        case line = 1, screenshot = 2, preview = 3
     }
 
     private var ref: EventHotKeyRef?
@@ -49,6 +50,9 @@ struct Shortcut: Equatable {
     var key: String
 
     static let standard = Shortcut(keyCode: kVK_ANSI_T, modifiers: [.control, .option], key: "t")
+
+    /// Space alone, taken only while the pointer is over a photo.
+    static let space = Shortcut(keyCode: kVK_Space, modifiers: [], key: " ")
 
     /// Shows and hides the line: ⌃⌥T unless changed. Nil means none at all.
     static var current: Shortcut? {

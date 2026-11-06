@@ -32,6 +32,8 @@ final class Line: ObservableObject {
     @Published var copiedID: UUID?
     @Published var draggingID: UUID?
     @Published var pressedID: UUID?
+    /// The photo under the pointer, for Space to preview it.
+    @Published var hoveredID: UUID?
     /// Whether the line has slid down into view.
     @Published var revealed = false
 
@@ -109,6 +111,8 @@ final class Line: ObservableObject {
         onFall?(items[i])
         items[i].falling = true
         hitRects[id] = nil
+        // The pointer may still rest where it hung, so Space lets go of it.
+        if hoveredID == id { hoveredID = nil }
         save()
         if !quietly { play("Pop", volume: 0.25) }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
@@ -283,6 +287,13 @@ final class Line: ObservableObject {
         let live = items.filter { !$0.falling }
         guard let index = live.firstIndex(where: { $0.id == id }) else { return }
         QuickLook.shared.show(live.map(\.url), at: index)
+    }
+
+    /// Space over a photo: open it in Quick Look, or close it again.
+    func toggleQuickLook(_ id: UUID) {
+        let live = items.filter { !$0.falling }
+        guard let index = live.firstIndex(where: { $0.id == id }) else { return }
+        QuickLook.shared.toggle(live.map(\.url), at: index)
     }
 
     /// After a change of size, every photo is redrawn sharp at the new one.

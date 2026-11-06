@@ -24,6 +24,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var signalSources: [DispatchSourceSignal] = []
     private var hotKey: HotKey?
     private var screenshotHotKey: HotKey?
+    /// Space, held only while the pointer is over a photo.
+    private var previewHotKey: HotKey?
     private var cancellables = Set<AnyCancellable>()
     private var mouseTimer: Timer?
 
@@ -99,6 +101,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         setUpStatusItem()
         watchMenuBarClicks()
+        watchPointerPushes()
 
         Markup.shared.onSaved = { [weak self] url in self?.line.reloadThumbnail(for: url) }
         Trim.shared.onSaved = { [weak self] url in self?.line.reloadThumbnail(for: url) }
@@ -107,6 +110,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         line.$items
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.itemsChanged() }
+            .store(in: &cancellables)
+        // Space previews the photo under the pointer. It is taken only while
+        // the pointer is over one, so typing anywhere else keeps its spaces.
+        line.$hoveredID
+            .removeDuplicates()
+            .sink { [weak self] id in self?.watchSpace(over: id) }
             .store(in: &cancellables)
         // Photos kept from last time show themselves for a moment.
         if line.liveCount > 0 { comeDown(on: nil) }
@@ -276,6 +285,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard let self, self.line.liveCount == 0, !self.keepOpen else { return }
             self.wanted = false
             self.refresh()
+        }
+    }
+
+    private func watchSpace(over id: UUID?) {
+        // Let go of the previous one first: the same key cannot be held twice.
+        previewHotKey = nil
+        guard id != nil, isRevealed else { return }
+        previewHotKey = HotKey(Shortcut.space, for: .preview) { [weak self] in
+            guard let self, let hovered = self.line.hoveredID else { return }
+            self.line.toggleQuickLook(hovered)
         }
     }
 
@@ -460,6 +479,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if !on {
             pinned = false
             peekUntil = .distantPast
+            // Tucked away, no photo is under the pointer, so Space goes back.
+            line.hoveredID = nil
             panel.ignoresMouseEvents = true
             // Opened on purpose lasts until the line tucks away, however that
             // happens: an empty line then goes, as with the shortcut, and over
@@ -519,29 +540,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// The previous look at the pointer, to notice it going unwatched.
     private var lastTick: Date?
 
-    private func noteLineStayedUp(inMenuBar: Bool, screen: NSScreen?, now: Date) {
-        guard inMenuBar, let screen else {
+    private func noteLineStayedUp(inHotZone: Bool, screen: NSScreen?, now: Date) {
+        guard inHotZone, let screen else {
             stayedUpSince = nil
             stayedUpLogged = false
             return
         }
         let since = stayedUpSince ?? now
         stayedUpSince = since
-        guard !stayedUpLogged, now.timeIntervalSince(since) >= Self.revealDelay else { return }
+        guard !stayedUpLogged, now.timeIntervalSince(since) >= HotZone.delay else { return }
         stayedUpLogged = true
         log.notice("""
             Rested in the menu bar of \(screen.localizedName, privacy: .public) but the line stayed up: \
             \(self.line.liveCount, privacy: .public) on the line, \
             menu bar hover \(Self.opensFromMenuBar ? "on" : "off", privacy: .public), \
             held back by a menu bar click \(self.menuBarSuppressed, privacy: .public), \
+            key \(HotZone.modifier.rawValue, privacy: .public) held \(HotZone.modifierHeld, privacy: .public), \
             kept away by full screen \(FullScreen.blocksLine(on: screen), privacy: .public)
             """)
     }
-
-    /// How long the cursor rests against the top edge before the line comes
-    /// down. Short enough to feel instant, long enough that a quick trip to
-    /// the menu bar does not trigger it.
-    private static let revealDelay: TimeInterval = 0.25
 
     /// The menu bar strip at the top of a screen. With an auto-hiding menu
     /// bar the visible frame reaches the top, so the system thickness is used.
@@ -606,6 +623,72 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             clickMonitors.append(local)
         }
     }
+    /// Whether hovering may bring the line down on that screen now: something
+    /// hangs, hovering is on, no menu bar click holds it back, and no full
+    /// screen app keeps it away.
+    private func canComeDownFromHover(on screen: NSScreen) -> Bool {
+        line.liveCount > 0 && Self.opensFromMenuBar && !menuBarSuppressed && !FullScreen.blocksLine(on: screen)
+    }
+
+    private func bringDownFromHover(on screen: NSScreen) {
+        if panel.screen != screen {
+            panel.placeOnScreen()
+            updateCapacity()
+        }
+        refresh()
+        reveal()
+        if isRevealed {
+            log.notice("Came down from the menu bar of \(screen.localizedName, privacy: .public)")
+        } else {
+            log.notice("Asked for at the top of \(screen.localizedName, privacy: .public) but the line could not come down, present \(self.isPresent, privacy: .public)")
+        }
+    }
+
+    // MARK: Pushing against the top edge
+
+    /// How far the current push has gone, and when it last moved.
+    private var pushed: CGFloat = 0
+    private var lastPushAt = Date.distantPast
+
+    /// When pushing is what brings the line down. Up against the edge the
+    /// pointer stays put, so the push only shows in the movement that mouse
+    /// events still report there. Mouse events need no permission to watch.
+    private func watchPointerPushes() {
+        let handler: (NSEvent) -> Void = { [weak self] event in
+            MainActor.assumeIsolated { self?.notePush(event) }
+        }
+        if let global = NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved, handler: handler) {
+            clickMonitors.append(global)
+        }
+        if let local = NSEvent.addLocalMonitorForEvents(matching: .mouseMoved, handler: { e in handler(e); return e }) {
+            clickMonitors.append(local)
+        }
+    }
+
+    private func notePush(_ event: NSEvent) {
+        guard HotZone.trigger == .push, !isRevealed else {
+            pushed = 0
+            return
+        }
+        let p = NSEvent.mouseLocation
+        guard let screen = NSScreen.screens.first(where: { NSMouseInRect(p, $0.frame, false) }),
+              HotZone.isAtTopEdge(p, of: screen), canComeDownFromHover(on: screen), HotZone.modifierHeld else {
+            pushed = 0
+            return
+        }
+        let now = Date()
+        // One push: a pause starts it over.
+        if now.timeIntervalSince(lastPushAt) > 0.4 { pushed = 0 }
+        if pushed == 0 { log.notice("Pushing against the top of \(screen.localizedName, privacy: .public)") }
+        lastPushAt = now
+        // Still at the edge, so any vertical movement went up into it: going
+        // down even a point would have left it.
+        pushed += abs(event.deltaY)
+        guard pushed >= HotZone.pushDistance else { return }
+        pushed = 0
+        bringDownFromHover(on: screen)
+    }
+
     /// How long the cursor is away before the line tucks back up.
     private static let retractDelay: TimeInterval = 0.5
 
@@ -619,6 +702,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         let screenUnderPointer = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) }
         let inMenuBar = screenUnderPointer.map { NSMouseInRect(mouse, Self.menuBarBand(of: $0), false) } ?? false
+        let inHotZone = screenUnderPointer.map { NSMouseInRect(mouse, HotZone.rect(on: $0), false) } ?? false
         if !inMenuBar { menuBarSuppressed = false }
         // The hold after a menu bar click lasts while its menu is open. The
         // menu takes a moment to appear, and looking costs a few milliseconds,
@@ -633,32 +717,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         guard isRevealed else {
-            // Resting in the menu bar brings the line down on that screen.
-            // Pushing against the top edge is part of it, and it also works
-            // when another display sits above and the pointer never stops.
+            // Resting in the hover area, the menu bar unless changed, brings
+            // the line down on that screen. Pushing against the top edge is
+            // part of it, and it also works when another display sits above
+            // and the pointer never stops.
             // An empty line stays up there: only the shortcut and the menu
             // bring it down on purpose.
-            if line.liveCount > 0, Self.opensFromMenuBar, let screen = screenUnderPointer,
-               inMenuBar, !menuBarSuppressed, !FullScreen.blocksLine(on: screen) {
+            // Pushing instead is watched in notePush.
+            if HotZone.trigger == .rest, let screen = screenUnderPointer, inHotZone,
+               canComeDownFromHover(on: screen), HotZone.modifierHeld {
                 let since = hotZoneSince ?? now
                 hotZoneSince = since
-                if now.timeIntervalSince(since) >= Self.revealDelay {
+                if now.timeIntervalSince(since) >= HotZone.delay {
                     hotZoneSince = nil
-                    if panel.screen != screen {
-                        panel.placeOnScreen()
-                        updateCapacity()
-                    }
-                    refresh()
-                    reveal()
-                    if isRevealed {
-                        log.notice("Came down from the menu bar of \(screen.localizedName, privacy: .public)")
-                    } else {
-                        log.notice("Rested in the menu bar of \(screen.localizedName, privacy: .public) but the line could not come down, present \(self.isPresent, privacy: .public)")
-                    }
+                    bringDownFromHover(on: screen)
                 }
             } else {
                 hotZoneSince = nil
-                noteLineStayedUp(inMenuBar: inMenuBar, screen: screenUnderPointer, now: now)
+                if HotZone.trigger == .rest {
+                    noteLineStayedUp(inHotZone: inHotZone, screen: screenUnderPointer, now: now)
+                }
             }
             return
         }
@@ -892,11 +970,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         let bringDown = NSMenuItem(title: L("Bring the line down"), action: nil, keyEquivalent: "")
         let options = NSMenu()
+        options.autoenablesItems = false
         let hover = ClosureMenuItem(L("When the pointer rests in the menu bar")) {
             AppDelegate.opensFromMenuBar.toggle()
         }
         hover.state = Self.opensFromMenuBar ? .on : .off
         options.addItem(hover)
+        let area = ClosureMenuItem(L("Hover Area…")) { HotZoneSettings.shared.show() }
+        area.isEnabled = Self.opensFromMenuBar
+        options.addItem(area)
         let peek = ClosureMenuItem(L("When something new hangs")) {
             AppDelegate.peeksAtNew.toggle()
         }
